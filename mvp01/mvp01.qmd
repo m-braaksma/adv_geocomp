@@ -1,0 +1,106 @@
+---
+title: "MVP 1"
+subtitle: "Advanced Geocomputation"
+author: 'Matt Braaksma'
+toc: true
+format: 
+    html:
+        theme: sandstone
+        html-math-method: katex
+        embed-resources: true
+        code-fold: true
+    pdf:  
+        documentclass: article
+        papersize: letter
+number-sections: false
+execute: 
+    cache: true
+jupyter: python3
+---
+
+## Description
+
+imports
+
+## Design Framework
+
+- Problem: Write a 2-3 sentence description of the problem you are solving.
+    - OpenStreetMap provides layer of land use/land cover data. How does this compare to land use/land cover data derived from remote sensing data?
+- Solution: Write a 2-3 sentence description of the robust solution that would solve the problem. Note, this is not the MVP solution. This is the complete solution if you had unlimited resources.
+    - Answering this question requires accessing both OSM LULC data and a remote sensing data set. Next a correspondence is required to ensure the proper classes are being compared. Then spatial correlation analysis can be conducted. Finally, other data could be included to determine whether the correlations are driving by other socioeconomic or geographic determinants. 
+- Challenge: Write a 1-2 sentence description of the top-most challenge to create your solution.
+    - Sourcing the data and ensuring that the different pieces work well together. 
+- Spec list: Brainstorm all of the features/capabilities your solution will need. Rate each feature/capability on their value (how useful is it?) and effort (how much time to create it?). List your top 7 features and their rated value and effort as High, Medium, Low (H, M, L) for your spec.
+
+
+| Spec  | Value (H, M, L) | Effort (H, M, L)| 
+|---	|---	|---	|
+| Get OSM data  	|   H	|   L	|
+| Get remote sensing data  	|   H	|   M	|
+|  Create class correspondence 	|   M	|   M	|
+|  Rasterize OSM data  	|   H	|   H	|
+|  Compare OSM and remote sensing rasters  	|   H	|   M	|
+
+Review the spec list. Cross of features that are too high effort for too low value until you have a
+list of features that can be implemented in 2 weeks. That is your MVP!
+Success: Now that you have your MVP spec. What is the key metric for success? If you achieve
+XYZ you know that your MVP was successful. Write 1 sentence outlining your 1 key metric.
+Reflection: After you implement your MVP, write 6-7 sentences reflecting on your experiences in
+developing and running your MVP. Was it successful? What did you learn? Would you have done
+something differently if you were to repeat the project?
+
+## Code
+
+### Import modules
+```{python}
+from pyrosm import OSM
+from pyrosm import get_data
+import matplotlib.pyplot as plt
+
+import osmnx as ox
+import geopandas as gpd
+from osgeo import gdal
+
+import warnings
+warnings.filterwarnings("ignore", message="/Users/mbraaksma/mambaforge/envs/geovenv1/lib/python3.10/site-packages/shapely/predicates.py:798: RuntimeWarning: invalid value encountered in intersects")
+warnings.filterwarnings("ignore", message="/Users/mbraaksma/mambaforge/envs/geovenv1/lib/python3.10/site-packages/shapely/predicates.py:340: RuntimeWarning: invalid value encountered in intersects")
+```
+
+<!-- ### Import OSM LULC -->
+<!-- ```{python}
+fp = get_data("groningen")
+# Initialize the OSM parser object
+osm = OSM(fp)
+landuse = osm.get_landuse()
+landuse.plot(column='landuse', legend=True, figsize=(10,6))
+``` -->
+
+### Import OSM LULC #2
+
+```{python, cache=TRUE}
+gdf = ox.features_from_place("groningen", tags = {"landuse": True})
+gdf.explore(column='landuse')
+```
+
+### Import ESA LULC
+```{python, cache=TRUE}
+lulc_path = '/Users/mbraaksma/Files/base_data/lulc/esa/lulc_esa_2020.tif'
+lulc_data = gdal.Open(lulc_path)
+
+lulc_array = lulc_data.GetRasterBand(1).ReadAsArray()
+
+# Close the dataset
+lulc_data = None
+
+# Plot the raster data
+plt.figure(figsize=(10, 8))
+plt.imshow(lulc_array, cmap='viridis')  # Adjust colormap if needed
+plt.colorbar(label='Raster Values')
+plt.title('Raster Plot')
+plt.show()
+```
+
+
+::: {.callout-tip collapse="true"}
+## Answer
+:::
