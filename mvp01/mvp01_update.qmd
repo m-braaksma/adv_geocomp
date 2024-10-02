@@ -47,16 +47,22 @@ warnings.filterwarnings("ignore", message="/Users/mbraaksma/mambaforge/envs/geov
 4. Analyze correlations between different classes and locations
 
 ## Progress
+
+:::: {.columns}
+
+::: {.column}
 ### OSM LULC
 ```{python, cache=TRUE}
-gdf = ox.features_from_place("groningen", tags = {"landuse": True})
+# gdf = ox.geocode_to_gdf("St. Louis County, Minnesota, USA")
+gdf = ox.features_from_place("St. Louis County, Minnesota, USA", tags = {"landuse": True})
 gdf.plot(column='landuse')
 ```
+:::
 
-## Progress
+::: {.column}
 ### NLCD LULC
 ```{python, cache=TRUE}
-lulc_path = '/Users/mbraaksma/Files/base_data/lulc/esa/lulc_esa_2020.tif'
+lulc_path = '/Users/mbraaksma/Files/base_data/lulc/nlcd/nlcd_clipped.tif'
 lulc_data = gdal.Open(lulc_path)
 
 lulc_array = lulc_data.GetRasterBand(1).ReadAsArray()
@@ -66,8 +72,14 @@ lulc_data = None
 
 # Plot the raster data
 plt.figure(figsize=(10, 8))
-plt.imshow(lulc_array, cmap='viridis')  # Adjust colormap if needed
-plt.colorbar(label='Raster Values')
+plt.imshow(lulc_array)  # Adjust colormap if needed
+# plt.colorbar(label='Raster Values')
 plt.title('Raster Plot')
 plt.show()
 ```
+:::
+
+::::
+
+
+

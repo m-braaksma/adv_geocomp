@@ -60,20 +60,43 @@ import matplotlib.pyplot as plt
 import osmnx as ox
 import geopandas as gpd
 from osgeo import gdal
-
-import warnings
-warnings.filterwarnings("ignore", message="/Users/mbraaksma/mambaforge/envs/geovenv1/lib/python3.10/site-packages/shapely/predicates.py:798: RuntimeWarning: invalid value encountered in intersects")
-warnings.filterwarnings("ignore", message="/Users/mbraaksma/mambaforge/envs/geovenv1/lib/python3.10/site-packages/shapely/predicates.py:340: RuntimeWarning: invalid value encountered in intersects")
+import pygeoprocessing as pygeo
 ```
 
-<!-- ### Import OSM LULC -->
-<!-- ```{python}
-fp = get_data("groningen")
-# Initialize the OSM parser object
-osm = OSM(fp)
-landuse = osm.get_landuse()
-landuse.plot(column='landuse', legend=True, figsize=(10,6))
-``` -->
+```{python, get_mn}
+# Get the geographic boundary for St. Louis County, Minnesota
+gdf = ox.geocode_to_gdf("St. Louis County, Minnesota, USA")
+gdf_path = '/Users/mbraaksma/Files/advgeocomp2024/advgeocomp2024/mvp01/data/slc.gpkg'
+albers_crs = {
+    'proj': 'aea', 'lat_1': 29.5, 'lat_2': 45.5, 'lat_0': 23, 
+    'lon_0': -96, 'x_0': 0, 'y_0': 0, 'datum': 'WGS84', 'units': 'm', 'no_defs': True
+}
+gdf = gdf.to_crs(albers_crs)
+gdf.to_file(gdf_path, driver='GPKG')
+```
+
+```{python}
+# File paths
+input_raster = '/Volumes/T7 Touch/Research/Reservation_Land/NLCD/raw/nlcd_2021_land_cover_l48_20230630/nlcd_2021_land_cover_l48_20230630.img'
+input_vector = '/Users/mbraaksma/Files/advgeocomp2024/advgeocomp2024/mvp01/data/slc.gpkg'
+output_raster = '/Users/mbraaksma/Files/base_data/lulc/nlcd/nlcd_clipped.tif'
+
+# Open the raster
+raster = gdal.Open(input_raster)
+
+# Use gdal.Warp to clip raster with the vector file
+gdal.Warp(
+    output_raster,
+    raster,
+    format='GTiff',
+    cutlineDSName=input_vector,  # Path to vector file
+    cropToCutline=True,          # Only crop the raster to the extent of the vector
+    dstNodata=-9999,             # Set nodata value for the output raster
+)
+
+# Close the dataset
+raster = None
+```
 
 ### Import OSM LULC #2
 
@@ -84,7 +107,7 @@ gdf.explore(column='landuse')
 
 ### Import ESA LULC
 ```{python, cache=TRUE}
-lulc_path = '/Users/mbraaksma/Files/base_data/lulc/esa/lulc_esa_2020.tif'
+lulc_path = '/Users/mbraaksma/Files/base_data/lulc/nlcd/nlcd_clipped.tif'
 lulc_data = gdal.Open(lulc_path)
 
 lulc_array = lulc_data.GetRasterBand(1).ReadAsArray()
