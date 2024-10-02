@@ -1,0 +1,73 @@
+---
+title: "MVP 1"
+subtitle: "Advanced Geocomputation"
+author: 
+    name: Matt Braaksma
+    affiliations: University of Minnesota
+date: 10/03/2024
+date-format: long
+format: 
+    clean-revealjs:
+        embed-resources: true
+        incremental: false
+        title-slide-attributes: 
+            data-background-image: UMN9_M-1line-blk.png
+            data-background-size: 25%
+            data-background-position: 4% 97%
+        html-math-method: katex
+        scrollable: true
+---
+
+```{python}
+from pyrosm import OSM
+from pyrosm import get_data
+import matplotlib.pyplot as plt
+
+import osmnx as ox
+import geopandas as gpd
+from osgeo import gdal
+
+import warnings
+warnings.filterwarnings("ignore", message="/Users/mbraaksma/mambaforge/envs/geovenv1/lib/python3.10/site-packages/shapely/predicates.py:798: RuntimeWarning: invalid value encountered in intersects")
+warnings.filterwarnings("ignore", message="/Users/mbraaksma/mambaforge/envs/geovenv1/lib/python3.10/site-packages/shapely/predicates.py:340: RuntimeWarning: invalid value encountered in intersects")
+```
+
+## Overview
+- OpenStreetMap (OSM) includes a layer of land use/land cover (LULC) data
+- Remote sensing data can be converted to LULC
+
+> How does LULC data in OSM differ from remote sensing LULC? 
+
+## Approach and Challenges
+1. Source Data
+    - OSM LULC
+    - NLCD LULC
+2. Convert OSM data to raster format
+3. Create correspondence between OSM and NLCD classes
+4. Analyze correlations between different classes and locations
+
+## Progress
+### OSM LULC
+```{python, cache=TRUE}
+gdf = ox.features_from_place("groningen", tags = {"landuse": True})
+gdf.plot(column='landuse')
+```
+
+## Progress
+### NLCD LULC
+```{python, cache=TRUE}
+lulc_path = '/Users/mbraaksma/Files/base_data/lulc/esa/lulc_esa_2020.tif'
+lulc_data = gdal.Open(lulc_path)
+
+lulc_array = lulc_data.GetRasterBand(1).ReadAsArray()
+
+# Close the dataset
+lulc_data = None
+
+# Plot the raster data
+plt.figure(figsize=(10, 8))
+plt.imshow(lulc_array, cmap='viridis')  # Adjust colormap if needed
+plt.colorbar(label='Raster Values')
+plt.title('Raster Plot')
+plt.show()
+```

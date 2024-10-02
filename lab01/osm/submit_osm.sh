@@ -20,4 +20,5 @@ cd advgeocomp2022/lab01/osm
 
 # Run the test python script called job.py
 module load python3
+source activate advgeocomp
 python3 job_osm.py
