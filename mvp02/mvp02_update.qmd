@@ -1,0 +1,59 @@
+---
+title: "MVP 2"
+subtitle: "Advanced Geocomputation"
+author: 
+    name: Matt Braaksma
+    affiliations: University of Minnesota
+date: 10/29/2024
+date-format: long
+format: 
+    clean-revealjs:
+        embed-resources: true
+        incremental: false
+        title-slide-attributes: 
+            data-background-image: UMN9_M-1line-blk.png
+            data-background-size: 25%
+            data-background-position: 4% 97%
+        html-math-method: katex
+        scrollable: true
+---
+
+## Overview
+
+- Deforestation and cropland expansion are global problems, impacting greenhouse gas emissions, biodiversity, and more.
+- Land conversion is strongly influenced by land supply elasticities.
+    - How responsive is land supply (i.e., land expansion) to changes in prices?
+    - Land supply elasticity refers to the percentage change in cropland resulting from a one percent increase in land rents for agriculture (relative to alternative uses).
+
+
+## Overview 
+
+:::: {.columns}
+::: {.column} 
+- However, due to a lack of price data in developing countries, these elasticities must be estimated.
+    - Villoria & Liu (2018) estimate gridded land supply elasticities based on market access and land suitability factors.
+:::
+
+::: {.column}
+![](assets/elasticities.png)
+:::
+::::
+
+
+## MVP 2 Question
+
+> How would predictions from a machine learning approach differ from econometric predictions?
+
+
+
+
+## Next Steps
+1. Gather data used in Villoria & Liu (2018)
+    - Includes potential vegetation types (5 categories), soil fertility constraints (scale of 0-8), precipitation (mm/year), elevation (meters), soil pH (scale of 0-14), soil carbon (1m depth, kg-C/m²), temperature (°C), market access (index), area equipped for irrigation (% of grid cell), built-up land (% of grid cell), protected areas (binary 0-1), and agro-ecological zones (GTAP classification).
+2. Replicate estimates from Villoria & Liu (2018)
+3. Use `torchgeo` to predict elasticities
+4. Compare predictions between methods
+
+
+
+
