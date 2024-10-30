@@ -1,2 +1,16 @@
 Project Proposal
 
+1. Project title
+> Using AI to predict gridded land supply elasticities
+
+2. Name(s) of project members
+> Matt Braaksma
+
+3. 4-6 sentences describing your project
+> This project tackles global challenges of deforestation and cropland expansion, focusing on how land conversion responds to land supply elasticity, or the sensitivity of land expansion to changes in agricultural land rents. Due to limited price data in developing countries, these elasticities must often be estimated using other indicators, such as market access and land suitability factors. Building on Villoria & Liu's (2018) gridded land elasticity estimates, this project will replicate their econometric approach and apply machine learning techniques to predict land supply elasticities, using data such as soil fertility, climate variables, and vegetation types. The ultimate goal is to compare predictions from machine learning against traditional econometric estimates to assess potential differences and improvements.
+
+
+
+
+4. Your biggest obstacle for your project.
+> One of the biggest issues is that this is not a classification problem, which represents the majority of geospatial AI examples we learned. I plan to start this project as MVP 2 and continue to work on it and refine the idea as a project. 
