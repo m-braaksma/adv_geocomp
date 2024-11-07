@@ -29,13 +29,13 @@ format:
 ## Overview 
 
 :::: {.columns}
-::: {.column} 
+::: {.column width="40%"}
 - However, due to a lack of price data in developing countries, these elasticities must be estimated.
     - Villoria & Liu (2018) estimate gridded land supply elasticities based on market access and land suitability factors.
 :::
 
 ::: {.column}
-![](assets/elasticities.png)
+![](assets/elasticities.png){width=70%}
 :::
 ::::
 
@@ -53,7 +53,6 @@ format:
 2. Replicate estimates from Villoria & Liu (2018)
 3. Use `torchgeo` to predict elasticities
 4. Compare predictions between methods
-
 
 
 
