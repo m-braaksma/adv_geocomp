@@ -1,0 +1,226 @@
+---
+title: "MVP 3"
+subtitle: "Advanced Geocomputation"
+author: 
+    name: Matt Braaksma
+    affiliations: University of Minnesota
+date: 11/19/2024
+date-format: long
+format: 
+    clean-revealjs:
+        embed-resources: true
+        incremental: false
+        title-slide-attributes: 
+            data-background-image: assets/UMN9_M-1line-blk.png
+            data-background-size: 25%
+            data-background-position: 4% 97%
+        html-math-method: katex
+        scrollable: true
+execute:
+    echo: true
+    cache: true
+---
+
+
+## Climate Change and Coastal Housing Markets
+
+-   Rising sea levels and more frequent storms heighten risks to coastal infrastructure.
+-   Housing markets, however, often fail to account for these risks.
+-   Key question: How does the increasing likelihood of flooding affect housing prices?
+    -   Are homes in the southern U.S. overvalued given their vulnerability?
+
+![Flooding in Sarasota County, FL after Tropical Storm Debby[^1]](images/paste-1.png)
+
+[^1]: https://baynews9.com/fl/tampa/news/2024/08/09/laurel-meadows-floodwater-sarasota-
+
+
+## MVP 3 Question
+
+> How can parallel processing be incorporated into the workflow to improve computation time?
+
+![](images/paste-2.png)
+
+
+## Workflow
+
+1.  Read county parcels shape file
+2.  Gather and aggregate OSM building height data
+3.  Calculate zonal statistics to obtain the average probability by parcel
+
+## Import Modules
+
+```{python}
+import os
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import osmnx as ox
+import rasterio
+from rasterstats import zonal_stats
+from multiprocess import Pool
+import warnings
+import matplotlib.pyplot as plt
+
+# Suppress specific shapely warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="invalid value encountered in intersects")
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="invalid value encountered in union")
+```
+
+## Define OSM functions
+
+```{python}
+def fetch_osm_buildings(place, tags, crs):
+    """Fetch building data using OSMNx and transform to the given CRS."""
+    print(f"Fetching OSM building data for {place}")
+    buildings = ox.features_from_place(place, tags)
+    return buildings.to_crs(crs)
+
+def aggregate_building_data(parcels, buildings):
+    """Aggregate building data (count and average height) within parcels."""
+    print("Aggregating building data")
+    # Perform spatial join to assign buildings to parcels
+    joined = gpd.sjoin(buildings, parcels, how='inner', predicate='within')
+    
+    # Ensure height is numeric (OSM data can have it as a string)
+    joined['height'] = pd.to_numeric(joined['height'], errors='coerce')
+    
+    # Aggregate data: count buildings and compute average height
+    aggregated = (
+        joined.groupby('index_right')
+        .agg(
+            num_buildings=('height', 'size'),
+            avg_height=('height', 'mean')
+        )
+        .reset_index()
+    )
+    
+    # Merge the aggregated data back into the parcels DataFrame
+    parcels = parcels.merge(aggregated, left_index=True, right_on='index_right', how='left')
+    
+    # Fill NaNs with 0 for parcels that had no buildings
+    parcels['num_buildings'] = parcels['num_buildings'].fillna(0).astype(int)
+    parcels['avg_height'] = parcels['avg_height'].fillna(0)
+    
+    return parcels
+```
+
+## Define Surge functions
+
+```{python}
+def load_raster_to_array(raster_path):
+    """Load a raster as a NumPy array."""
+    with rasterio.open(raster_path) as src:
+        array = src.read(1)
+        affine = src.transform
+        nodata = src.nodata
+    return array, affine, nodata
+
+def calculate_zonal_stats(parcels, raster_path):
+    """Calculate zonal statistics for a given raster and parcel geometries."""
+    if not os.path.exists(raster_path):
+        print(f"Raster file not found: {raster_path}")
+        return [np.nan] * len(parcels)
+    
+    # Perform zonal statistics
+    stats = zonal_stats(parcels.geometry, raster_path, stats='mean', nodata=np.nan)
+    return [stat['mean'] if stat['mean'] is not None else np.nan for stat in stats]
+
+def calculate_zonal_stats_parallel(args):
+    """Wrapper function for parallel processing."""
+    parcels, raster_path = args
+    return calculate_zonal_stats(parcels, raster_path)
+```
+
+## Define Surge functions
+
+```{python}
+def add_surge_data(parcels, surge_files, use_parallel=False):
+    """Add surge data to parcels using either serial or parallel processing."""
+    if use_parallel:
+        print("Running in parallel mode...")
+        with Pool() as pool:
+            # Prepare arguments for each raster file
+            args_list = [(parcels, path) for path in surge_files.values()]
+            results = pool.map(calculate_zonal_stats_parallel, args_list)
+        # Assign results to DataFrame columns
+        for i, key in enumerate(surge_files.keys()):
+            parcels[key] = results[i]
+    else:
+        print("Running in serial mode...")
+        for key, path in surge_files.items():
+            print(f"Calculating zonal stats for {key}")
+            parcels[key] = calculate_zonal_stats(parcels, path)
+    
+    return parcels
+```
+
+## Define Paths
+
+```{python}
+# Directory paths
+data_dir = '/Users/mbraaksma/Files/base_data/coastal'
+county_parcel_dir = os.path.join(data_dir, 'counties')
+dare_parcel_path = os.path.join(county_parcel_dir, 'nc_dare')
+
+# Load parcel shapefile
+dare_parcels = gpd.read_file(dare_parcel_path).to_crs("EPSG:4326")
+
+# Flood surge raster paths
+surge_files = {
+    'surge_1ft': os.path.join(data_dir, 'surge_files', 'surge_probability_1ft_tracks_NA_era5_197901_202112_100_36-76'),
+    'surge_5ft': os.path.join(data_dir, 'surge_files', 'surge_probability_5ft_tracks_NA_era5_197901_202112_100_36-76'),
+    'surge_10ft': os.path.join(data_dir, 'surge_files', 'surge_probability_10ft_tracks_NA_era5_197901_202112_100_36-76'),
+    'surge_20ft': os.path.join(data_dir, 'surge_files', 'surge_probability_20ft_tracks_NA_era5_197901_202112_100_36-76')
+}
+
+# Load all surge rasters into memory
+raster_data = {}
+for key, path in surge_files.items():
+    if os.path.exists(path):
+        print(f"Loading {key} raster")
+        raster_data[key] = load_raster_to_array(path)
+```
+
+## Run **without** Parallel
+
+```{python}
+%%time 
+
+# Fetch the OSM building data
+place = "Dare County, North Carolina"
+tags = {"building": True}
+osm_buildings = fetch_osm_buildings(place, tags, dare_parcels.crs)
+
+# Aggregate building data within parcels
+dare_parcels_with_buildings = aggregate_building_data(dare_parcels, osm_buildings)
+
+# Add surge data to the parcels DataFrame
+surge_keys = list(raster_data.keys())
+dare_parcels_final = add_surge_data(dare_parcels_with_buildings, surge_files)
+print('Finished processing data')
+```
+
+## Run **with** Parallel
+
+```{python}
+%%time 
+
+# Fetch the OSM building data
+place = "Dare County, North Carolina"
+tags = {"building": True}
+osm_buildings = fetch_osm_buildings(place, tags, dare_parcels.crs)
+
+# Aggregate building data within parcels
+dare_parcels_with_buildings = aggregate_building_data(dare_parcels, osm_buildings)
+
+# Add surge data to the parcels DataFrame
+surge_keys = list(raster_data.keys())
+dare_parcels_final = add_surge_data(dare_parcels_with_buildings, surge_files, use_parallel=True)
+print('Finished processing data')
+```
+
+## Plot
+
+```{python}
+dare_parcels_final.plot('surge_1ft')
+```
