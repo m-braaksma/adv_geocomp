@@ -1,0 +1,170 @@
+---
+title: "Mapping the Economic Value of Landslide Regulation by Forests"
+subtitle: "Advanced Geocomputation"
+author: 
+    name: Matt Braaksma
+    affiliations: University of Minnesota
+date: 12/9/2024
+date-format: long
+format: 
+    clean-revealjs:
+        embed-resources: true
+        incremental: false
+        title-slide-attributes: 
+            data-background-image: assets/UMN9_M-1line-blk.png
+            data-background-size: 25%
+            data-background-position: 4% 97%
+        html-math-method: katex
+        scrollable: true
+execute:
+    echo: true
+    cache: true
+---
+
+## Ecosystem Services
+
+- Direct and indirect benefits provided by ecosystems to humans
+- Often difficult to measure the value of this benefit because they are not part of any market
+
+![](assets/Ecosystem-services.png)
+
+## Landslide Regulation
+
+- Landslides cause significant damage (including casualties) globally
+    - Especially in mountainous regions
+- Forests and other vegetation can regulate landslides by reducing erosion and absorbing rainwater which can trigger landslides
+    - Obviously this is valuable, but how much is it worth? 
+    - Key to policy decisions to consider costs and benefits
+
+## Methodological Framework
+
+1. Estimate Mortality Function
+    - Historical Landslide Deaths
+    - Sediment Export
+    - Population Data
+
+2. Predict Avoided Deaths 
+    - Estimated damage
+    - Current avoided sediment export
+    - Value of a Statistical Life (VSL)
+
+## Data
+### Historical Landslide Deaths
+
+![](assets/emdat.png)
+
+## Data
+### Sediment Export
+
+***InVEST SDR Model***
+
+1. Estimation of soil erosion using the Revised Universal Soil Loss Equation (USLE)
+- Maps soil loss on each pixel based on:
+    - Slope length and steepness (LS factor)
+    - Rainfall erosivity (R factor)
+    - Soil erodibility (K Factor)
+    - Vegetation Cover (C factor)
+    - Conservation practices (P factor)
+- USLE = LS x R x K x C x P = annual erosion
+
+## Data
+### Sediment Export
+
+***InVEST SDR Model***
+
+2. Estimation of the Sediment Delivery Ratio (SDR)
+- For each pixel, calculates how much erosion actually reaches streams
+- Based on land cover and degree of hydrological connectivity
+- Sediment export = USLE x SDR
+
+## Data
+### Sediment Export
+
+***InVEST SDR Model***
+
+
+![Sharp et al., 2020](assets/sdr.png)
+
+## Data
+### Sediment Export
+
+***InVEST SDR Model***
+
+- Input Data:
+
+    - Digital elevation model (DEM)
+    - Rainfall erosivity raster
+    - Soil Erodibility Raster
+    - Land use/land cover raster
+    - Watersheds shapefile
+    - Biophysical table to assign C and P factor
+    - Values to different LULC classes
+
+## Data
+### Population Data
+
+![](assets/nasa-gpw.png)
+
+
+## Final Data
+### Total Deaths 2010
+
+```{python, deaths}
+import os
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+
+nepal_base_path = '/Users/mbraaksma/Files/base_data/gep/landslides/borders/gadm_nepal_adm3.gpkg'
+nepal_base_gdf = gpd.read_file(nepal_base_path)
+
+nepal_path = '/Users/mbraaksma/Files/base_data/gep/landslides/full_panel.gpkg'
+nepal_gdf = gpd.read_file(nepal_path)
+nepal10_gdf = nepal_gdf[nepal_gdf['year'] == 2010]
+nepal10_gdf.explore('Total Deaths')
+```
+
+## Final Data
+### Mean Annual Sediment Export 2010
+
+```{python, avg_sed_exp}
+nepal10_gdf.explore('avg_sed_exp')
+```
+
+
+## Final Data
+### Mean Population 2010
+
+```{python, pop_mean}
+nepal10_gdf.explore('pop_mean')
+```
+
+## Final Data
+### Mean Population 2010
+
+```{python, predicted}
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+# Log-transform the independent variables
+panel_df = pd.DataFrame(nepal_gdf)
+panel_df['ln_avg_sed_exp'] = panel_df['avg_sed_exp'].apply(lambda x: np.log(x) if x > 0 else np.nan)
+panel_df['ln_pop_mean'] = panel_df['pop_mean'].apply(lambda x: np.log(x) if x > 0 else np.nan)
+panel_sub_df = panel_df[panel_df['year'] < 2020]
+
+# Fit the Poisson regression model
+formula = "deaths ~ ln_avg_sed_exp + ln_pop_mean + C(year)"
+model = smf.glm(formula=formula, data=panel_df, family=sm.families.Poisson()).fit()
+panel20_df = panel_df[panel_df['year'] == 2020]
+pred_df = pd.DataFrame()
+pred_df['predicted_deaths'] = model.predict(panel20_df)
+pred_df['GID_3'] = panel20_df['GID_3']
+nepal_pred_df = pd.merge(pred_df, panel20_df, on='GID_3', how='inner')
+nepal_pred_gdf = gpd.GeoDataFrame(nepal_pred_df, geometry='geometry')
+nepal_pred_gdf.explore('predicted_deaths')
+```
+
+
+## Thanks
+### Questions?

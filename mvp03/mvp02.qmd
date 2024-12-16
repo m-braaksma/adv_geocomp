@@ -1,0 +1,363 @@
+---
+title: "MVP 2"
+subtitle: "Advanced Geocomputation"
+author: 'Matt Braaksma'
+toc: true
+format: 
+    html:
+        theme: sandstone
+        html-math-method: katex
+        embed-resources: true
+        code-fold: true
+        code-tools: true
+        code-overflow: wrap
+    pdf:  
+        documentclass: article
+        papersize: letter
+number-sections: false
+execute: 
+    cache: true
+jupyter: python3
+---
+
+# Predicting Land Supply Elasticities
+
+## Description
+
+Deforestation and cropland expansion are significant global challenges, contributing to issues such as greenhouse gas emissions and biodiversity loss. These land-use changes are largely influenced by land supply elasticities, which measure how responsive land expansion is to price changes. However, in developing countries where price data is often unavailable, estimating these elasticities becomes difficult. Villoria and Liu (2018) address this gap by estimating gridded land supply elasticities based on factors like market access and land suitability. This Minimum Viable Product (MVP) focuses on developing an alternative framework to predict land supply elasticities with the aim of comparing the econometric model predictions to the machine learning predictions. 
+
+The key tasks for this MVP include:
+
+- Gather the raster data from Villoria and Liu (2018)
+- Reproject and resample the raster data
+- Generate the outcome data from Graesser et al. (2015)
+- Rasterize the outcome data
+- Find a suitable sample for the CNN model
+    - Look for a small square with no missing values
+- Combine the predictive rasters into a raster stack
+- Build a CNN to predict land elasticities
+
+## Code
+
+### 1. Import modules
+
+Import the necessary data, geospatial, visualization modules. 
+
+```{python}
+# Standard Library Imports
+import os
+import numpy as np
+
+# Data Visualization Imports
+import matplotlib.pyplot as plt
+
+# Geospatial Data Imports
+from osgeo import gdal
+import geopandas as gpd
+import rasterio
+from rasterio.features import rasterize
+
+# Machine Learning Imports
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+
+# Set dir
+# Define the path to your working directory
+data_dir = '../../../base_data/advgeocomp2024/mvp02'
+data_dir_land_supply = '../../../base_data/land_supply'
+os.makedirs(data_dir, exist_ok=True)
+```
+
+### 2a. Raster Data
+
+```{python}
+# Raster paths
+base_raster_paths = [
+    os.path.join(data_dir_land_supply, 'anntotprecip/anntotprecip'),
+    os.path.join(data_dir_land_supply, 'builtupland/builtupland'),
+    os.path.join(data_dir_land_supply, 'elevation/elevation'),
+    os.path.join(data_dir_land_supply, 'gl-croplands-geotif/cropland.tif'),
+    os.path.join(data_dir_land_supply, 'HWSD2_RASTER/HWSD2.bil'),
+    os.path.join(data_dir_land_supply, 'irragland/irragland'),
+    os.path.join(data_dir_land_supply, 'minutes_to_market/minutes_to_market_10s.tif'), # replacement market access file
+    os.path.join(data_dir_land_supply, 'potentialveg/potveg'),
+    os.path.join(data_dir_land_supply, 'soilcarbon/soilcarbon'),
+    os.path.join(data_dir_land_supply, 'SOILPH/soilph')
+]
+
+# Corresponding target paths
+target_raster_paths = [
+    os.path.join(data_dir_land_supply, 'aligned/anntotprecip.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/builtupland.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/elevation.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/cropland.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/HWSD2.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/irragland.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/minutes_to_market_10s.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/potentialveg.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/soilcarbon.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/SOILPH.tif')
+]
+
+# Create the target directory if it doesn't exist
+if not os.path.exists(os.path.join(data_dir_land_supply, 'aligned')):
+    os.mkdir(os.path.join(data_dir_land_supply, 'aligned'))
+
+# Loop through the base rasters and apply the gdal.Warp function
+for base_raster_path, target_raster_path in zip(base_raster_paths, target_raster_paths):     
+    # Using gdal.Warp to reproject and resize
+    gdal.Warp(
+        target_raster_path,
+        base_raster_path,
+        xRes=0.7,
+        yRes=0.7,
+        resampleAlg='bilinear',         
+        dstSRS='EPSG:4326'  
+    )
+    print(f"Raster succesfully processed and saved to {target_raster_path}.")
+```
+
+### 2b. Vector Data
+
+```{python}
+# Load shapefile
+ecos_path = os.path.join(data_dir, 'TerrestrialEcos')
+gdf = gpd.read_file(ecos_path)
+
+# Define the eco_names and their observed values from the figure in Graesser et al. (2015)
+eco_name_observed_values = {
+    'Araucaria moist forests': 0.12,
+    'Alto Paraná Atlantic forests': 0.15,
+    'Uruguayan savanna': 0.18,
+    'Llanos': 0.10,
+    'Espinal': 0.08,
+    'Humid Pampas': 0.07,
+    'Humid Chaco': 0.09,
+    'Peten–Veracruz moist forests': 0.05,
+    'Chiquitano dry forests': 0.03,
+    'Dry Chaco': 0.20,
+    'Cerrado': 0.25,
+    'Mato Grosso seasonal forests': 0.60
+}
+
+# Filter the GeoDataFrame to include only the specified eco_names
+subset_gdf = gdf[gdf['ECO_NAME'].isin(eco_name_observed_values.keys())].copy()
+
+# Add a new column 'observed_value' with the corresponding observed values
+subset_gdf.loc[:, 'observed_value'] = subset_gdf['ECO_NAME'].map(eco_name_observed_values)
+
+# Load the template raster file
+with rasterio.open(target_raster_paths[0]) as src:
+    template_meta = src.meta.copy()
+    template_shape = src.shape
+    template_transform = src.transform
+
+# Prepare geometries and values for rasterization
+# Each geometry should have its 'observed_value' mapped to it
+shapes = ((geom, value) for geom, value in zip(subset_gdf.geometry, subset_gdf['observed_value']))
+
+# Rasterize using the template raster's shape and transform
+rasterized_data = rasterize(
+    shapes=shapes,
+    out_shape=template_shape,
+    transform=template_transform,
+    fill=0,  # background value, e.g., 0 for no data
+    dtype='float32'  # use a suitable data type
+)
+
+# Update metadata to match the output raster
+output_meta = template_meta.copy()
+output_meta.update({"dtype": 'float32', "count": 1})
+
+# Save the rasterized output to a new file
+output_path = os.path.join(data_dir, 'rasterized_ecos.tif')
+with rasterio.open(output_path, 'w', **output_meta) as dst:
+    dst.write(rasterized_data, 1)
+```
+
+### 3. Build CNN model
+data_dir_land_supply
+```{python}
+# Function to load a raster file and return its array representation
+def load_raster(raster_path):
+    """Loads a raster file from the given path and returns it as a NumPy array."""
+    dataset = gdal.Open(raster_path)  # Open the raster file
+    array = dataset.ReadAsArray()     # Read the raster data into a NumPy array
+    dataset = None
+    return array
+
+# Function to load and stack multiple raster files
+def load_and_stack_rasters(raster_paths):
+    """
+    Loads multiple raster files and stacks them along a new axis for CNN input
+    (height, width, channels).
+    """
+    raster_stack = []  # List to store individual raster arrays
+    
+    # Loop through each raster path, load the raster, and append it to the list
+    for path in raster_paths:
+        array = load_raster(path)
+        raster_stack.append(array)
+        print(f"Loaded {path} with shape {array.shape}")
+    
+    # Stack the loaded rasters along a new axis (creating the 'channels' dimension)
+    return np.stack(raster_stack, axis=-1)
+
+# Load and stack the rasters
+raster_paths = [
+    os.path.join(data_dir_land_supply, 'aligned/anntotprecip.tif'),
+    # os.path.join(data_dir_land_supply, 'aligned/builtupland.tif'), # Not the same dimensions as the other rasters
+    os.path.join(data_dir_land_supply, 'aligned/elevation.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/cropland.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/HWSD2.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/irragland.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/minutes_to_market_10s.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/potentialveg.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/soilcarbon.tif'),
+    os.path.join(data_dir_land_supply, 'aligned/SOILPH.tif')
+]
+raster_stack = load_and_stack_rasters(raster_paths)
+
+# Function to find a square area without missing data (zeros) in the outcome raster
+def find_square_with_complete_outcome(outcome_raster, raster_stack, square_size):
+    """
+    Finds a square region in the outcome raster with no zero values,
+    then extracts the corresponding square region from the raster stack.
+    """
+    height, width = outcome_raster.shape  # Get dimensions of the outcome raster
+    x_max_start = width - square_size     # Maximum starting x-coordinate for the square
+    y_max_start = height - square_size    # Maximum starting y-coordinate for the square
+    
+    # Loop through the raster, stepping by the square size
+    for y_start in range(0, y_max_start + 1, square_size):
+        for x_start in range(0, x_max_start + 1, square_size):
+            # Extract the square region from the outcome raster
+            outcome_square = outcome_raster[y_start:y_start + square_size, x_start:x_start + square_size]
+            
+            # Check if there are any missing data (zeros) in the square region
+            has_missing_data = (outcome_square == 0).any()
+            
+            # If no missing data, extract the corresponding region from the raster stack
+            if not has_missing_data:
+                predictor_square = raster_stack[y_start:y_start + square_size, x_start:x_start + square_size, :]
+                return predictor_square, outcome_square
+    
+    # Raise an error if no valid square was found
+    raise ValueError("No square region without zero values in the outcome raster was found.")
+
+# Path to the outcome raster (dependent variable)
+outcome_raster_path = os.path.join(data_dir, 'rasterized_ecos.tif')
+
+# Load the outcome raster
+outcome_raster = load_raster(outcome_raster_path)
+
+# Example usage: Find a 12x12 area without zero values in the outcome
+# 12 is the largest available square
+square_size = 12
+
+try:
+    # Find a valid square region
+    predictor_square, outcome_square = find_square_with_complete_outcome(outcome_raster, raster_stack, square_size)
+    print("Found a valid square area without zero values in the outcome raster.")
+    
+    # Plot the outcome square
+    plt.figure(figsize=(10, 8))
+    plt.imshow(outcome_square, cmap='viridis', vmin=np.min(outcome_raster), vmax=np.max(outcome_raster))
+    plt.colorbar(label='Land Supply Elasticity')
+    plt.title('Outcome Raster (Land Supply Elasticity)')
+    plt.show()
+except ValueError as e:
+    print(e)
+```
+
+```{python}
+# Assuming `predictor_square` and `outcome_square` are lists of extracted squares
+predictor_squares = np.array(predictor_square)  # Shape: (num_samples, square_size, square_size, num_rasters)
+outcome_squares = np.array(outcome_square)      # Shape: (num_samples, 1)
+
+# Add a channel dimension to predictor_squares if it's missing
+predictor_squares = np.expand_dims(predictor_squares, axis=-1)  # Adding channel dimension (if needed)
+
+# Split the data into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(predictor_squares, outcome_squares, test_size=0.2, random_state=42)
+
+# Ensure y_train is 2D (num_samples, 1)
+y_train = np.expand_dims(y_train, axis=-1)  # Ensure it's a 2D array (num_samples, 1)
+
+# Define the CNN model architecture
+def build_cnn_model(input_shape):
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=input_shape),
+        tf.keras.layers.MaxPooling2D((2, 2), padding='same'),
+        
+        tf.keras.layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+        tf.keras.layers.MaxPooling2D((2, 2), padding='same'),
+        
+        tf.keras.layers.Conv2D(128, (3, 3), activation='relu', padding='same'),
+        tf.keras.layers.GlobalAveragePooling2D(),
+        
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(1)  # Single output for regression
+    ])
+    return model
+
+# Build the model
+input_shape = X_train.shape[1:]  # (square_size, square_size, num_rasters)
+model = build_cnn_model(input_shape)
+
+# Compile the model for regression
+model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+
+# Train the model
+epochs = 4
+batch_size = 16
+history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2)
+
+# # Evaluate the model on the test data
+# test_loss, test_mae = model.evaluate(X_test, y_test)
+# print(f"Test Mean Absolute Error: {test_mae}")
+
+# # Predict on new data (example)
+# predictions = model.predict(X_test)
+```
+
+As seen in the final epochs, the CNN fails which means the final predictions cannot be made. After multiple attempts to address this, I believe the small outcome raster size is the limiting factor, which is a significant data limitation. 
+
+
+## Design Framework
+
+#### Problem 
+How would predictions from a machine learning approach differ from econometric predictions?
+
+Villoria & Liu (2018) estimate gridded land supply elasticities using an econometric specification based on market access and land suitability factors. 
+
+#### Solution
+Answering this question requires a significant amount of data gathering. First, the market access and land suitability data from Villoria & Liu (2018) must be downloaded. Next, the validation data from Graesser et al. (2015)  must be found and downloaded. After ensuring that all the data is a proper format to work nicely together, a sample must be taken to use for building the machine learning model. A CNN regression model can be used to predict land supply elasticities. Finally, this can be compared to the replicated gridded elasticities from Villoria & Liu (2018).
+
+#### Challenge
+Sourcing the data and ensuring that the different pieces work well together. 
+
+#### Spec list
+
+| Spec  | Value (H, M, L) | Effort (H, M, L)| 
+|---	|---	|---	|
+| Get data used in Villoria & Liu (2018)  	|   H	|   M	|
+| Get validation data from Graesser et al. (2015)  	|   H	|   M	|
+|  Clean Data (align, reproject, etc) 	|   H	|   M	|
+|  Build CNN to predict land supply elasticities  	|   H	|   H	|
+|  <s>Replicate Villoria & Liu (2018) estimates</s>  	|   L	|   M	|
+|  <s>Compare methods</s>  	|   H	|   M	|
+
+
+#### Success
+After detailing the steps for this MVP, is it likely that it will not be possible to complete. A success for this MVP would be to build a CNN model that can be used for prediction on raster data. My goal is to learn how to do so in a realistic setting, even if the final result is incomplete. 
+
+####  Reflection
+
+During this MVP, I encountered several significant challenges:
+
+- Data Limitations: The outcome data was not accessible, so I had to locate a relevant shapefile and construct the variable based on a figure.
+- Rasterization Issues: The resulting rasterized outcome contained numerous missing values, limiting the largest viable square sample for the CNN model to only 12x12 pixels. I wasn’t sure of alternative approaches for handling missing outcome data.
+- Model Constraints: The limited sample size seemed insufficient for the CNN. Although the model technically fit, the loss function diverged to NaN, indicating potential issues with model performance.
+
+While I hesitate to consider this MVP a success given the CNN model’s inability to produce predictions, the experience offered valuable insights. Working through a complete machine learning workflow has improved my understanding of the data requirements at each stage. I’m still interested in exploring this topic, but I’m beginning to think that machine learning methods may not be the best fit for this specific question, particularly given the lack of outcome data. A key takeaway from this MVP is that I now have a clearer perspective on how to modify and improve my project proposal.
